@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMA Crossover Backtester — Upstox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0d12; --panel:#12161e; --panel-2:#161b25; --line:#232a38;
+    --text:#dbe2ec; --text-dim:#7c8797; --text-faint:#4d5665;
+    --buy:#33d17a; --sell:#ff5c66; --target:#e8b64d; --accent:#4f8cff;
+    --font-ui:'IBM Plex Sans',sans-serif; --font-num:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:14px;line-height:1.4;padding-bottom:50px;}
+  .wrap{max-width:1080px;margin:0 auto;padding:18px 16px 60px;}
+  h1{font-size:15px;letter-spacing:.04em;margin:0 0 2px;font-weight:600;}
+  .sub{color:var(--text-faint);font-size:11.5px;margin-bottom:16px;}
+  .banner{font-size:11.5px;color:var(--text-dim);border:1px dashed var(--line);border-radius:6px;padding:9px 11px;margin-bottom:16px;}
+  .banner b{color:var(--target);}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:14px;}
+  .panel h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-faint);margin:0 0 12px;font-weight:600;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;}
+  .field label{display:block;font-size:10.5px;color:var(--text-faint);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;}
+  .field input,.field select{width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:7px 9px;border-radius:6px;font-family:var(--font-ui);font-size:13px;}
+  .field input:focus,.field select:focus{outline:1px solid var(--accent);}
+  .field .hint{font-size:10px;color:var(--text-faint);margin-top:3px;}
+  button{background:var(--accent);color:#fff;border:none;padding:10px 18px;border-radius:6px;font-family:var(--font-ui);font-size:13.5px;font-weight:600;cursor:pointer;transition:.15s;}
+  button:hover{filter:brightness(1.12);}
+  button:disabled{opacity:.45;cursor:default;}
+  .status-line{color:var(--text-faint);font-size:11.5px;margin-top:10px;min-height:14px;}
+  .status-line.err{color:var(--sell);}
+  .status-line.ok{color:var(--buy);}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;}
+  .card .lbl{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;}
+  .card .val{font-family:var(--font-num);font-size:19px;font-weight:600;}
+  .card .val.pos{color:var(--buy);} .card .val.neg{color:var(--sell);}
+
+  table{width:100%;border-collapse:collapse;font-family:var(--font-num);font-size:12.5px;}
+  th{text-align:right;color:var(--text-faint);font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:6px 7px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  th:first-child,td:first-child{text-align:left;}
+  td{text-align:right;padding:6px 7px;border-bottom:1px solid #1a2029;white-space:nowrap;}
+  .pnl-pos{color:var(--buy);} .pnl-neg{color:var(--sell);}
+  .pill{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-family:var(--font-ui);font-weight:600;}
+  .pill.sl{background:rgba(255,92,102,.15);color:var(--sell);}
+  .pill.target{background:rgba(232,182,77,.18);color:var(--target);}
+  .pill.signal{background:rgba(79,140,255,.15);color:var(--accent);}
+  .pill.expiry{background:rgba(255,255,255,.08);color:var(--text-dim);}
+  .empty{color:var(--text-faint);font-size:12.5px;padding:16px 4px;text-align:center;}
+  .scrollx{overflow-x:auto;}
+  svg{display:block;width:100%;height:180px;}
+  ::-webkit-scrollbar{height:6px;width:6px;} ::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>EMA CROSSOVER BACKTESTER</h1>
+  <div class="sub">9/36 EMA crossover · Buy ATM option on signal · SL / Target / reverse-crossover exit</div>
+
+  <div class="banner">
+    <b>Read before trusting the numbers:</b> Nifty/BankNifty/Sensex candles are real (pulled live from your Upstox account). Option premiums are <b>not</b> real historical prices — they're estimated with a Black-Scholes model using the IV you set below, re-priced each day as the index moves and time passes. Real premiums differ due to volatility skew, liquidity, and bid-ask spread. Treat P&amp;L as illustrative of the signal's timing, not a guaranteed return.
+  </div>
+
+  <div class="panel">
+    <h2>Setup</h2>
+    <div class="grid">
+      <div class="field" style="grid-column:1/-1;">
+        <label>Upstox access token</label>
+        <input id="token" type="password" placeholder="Paste today's access token">
+        <div class="hint">Used only in your browser to call Upstox directly. Not saved anywhere.</div>
+      </div>
+      <div class="field"><label>Instrument</label>
+        <select id="instrument">
+          <option value="NIFTY">NIFTY 50</option>
+          <option value="BANKNIFTY">NIFTY BANK</option>
+          <option value="SENSEX">SENSEX</option>
+        </select>
+      </div>
+      <div class="field"><label>From date</label><input id="fromDate" type="date"></div>
+      <div class="field"><label>To date</label><input id="toDate" type="date"></div>
+      <div class="field"><label>Fast EMA</label><input id="emaFast" type="number" value="9" min="2"></div>
+      <div class="field"><label>Slow EMA</label><input id="emaSlow" type="number" value="36" min="3"></div>
+      <div class="field"><label>Stop loss (%)</label><input id="slPct" type="number" value="30" min="1"></div>
+      <div class="field"><label>Target (%)</label><input id="targetPct" type="number" value="50" min="1"></div>
+      <div class="field"><label>Assumed IV (%)</label><input id="ivPct" type="number" value="14" min="1" step="0.5"></div>
+      <div class="field"><label>Option tenor (days)</label><input id="dte" type="number" value="7" min="1">
+        <div class="hint">Days-to-expiry assumed at entry</div>
+      </div>
+      <div class="field"><label>Risk-free rate (%)</label><input id="rfPct" type="number" value="7" step="0.25"></div>
+      <div class="field"><label>Lot size</label><input id="lotSize" type="number" value="75" min="1"></div>
+    </div>
+    <div style="margin-top:14px;"><button id="runBtn">Run backtest</button></div>
+    <div class="status-line" id="statusLine"></div>
+  </div>
+
+  <div id="resultsWrap" style="display:none;">
+    <div class="cards">
+      <div class="card"><div class="lbl">Trades</div><div class="val" id="cTrades">—</div></div>
+      <div class="card"><div class="lbl">Win rate</div><div class="val" id="cWinRate">—</div></div>
+      <div class="card"><div class="lbl">Total P&amp;L</div><div class="val" id="cTotalPnl">—</div></div>
+      <div class="card"><div class="lbl">Avg P&amp;L / trade</div><div class="val" id="cAvgPnl">—</div></div>
+      <div class="card"><div class="lbl">Max drawdown</div><div class="val" id="cMaxDD">—</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Equity curve (cumulative P&amp;L)</h2>
+      <svg id="equitySvg" viewBox="0 0 800 180" preserveAspectRatio="none"></svg>
+    </div>
+
+    <div class="panel">
+      <h2>Trade log</h2>
+      <div class="scrollx">
+      <table>
+        <thead><tr>
+          <th>#</th><th>Entry date</th><th>Strike (ATM PE)</th><th>Entry premium</th>
+          <th>Exit date</th><th>Exit premium</th><th>Days held</th><th>P&amp;L</th><th>Reason</th>
+        </tr></thead>
+        <tbody id="tradeBody"></tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const INSTRUMENT_KEYS = {
+  NIFTY: { key: 'NSE_INDEX|Nifty 50', strikeStep: 50 },
+  BANKNIFTY: { key: 'NSE_INDEX|Nifty Bank', strikeStep: 100 },
+  SENSEX: { key: 'BSE_INDEX|SENSEX', strikeStep: 100 }
+};
+
+// ---------- stats helpers ----------
+function normCdf(x){
+  // Abramowitz-Stegun approximation of the standard normal CDF
+  const b1=0.319381530,b2=-0.356563782,b3=1.781477937,b4=-1.821255978,b5=1.330274429;
+  const p=0.2316419, c=0.39894228;
+  if(x>=0){
+    const t=1/(1+p*x);
+    return 1-c*Math.exp(-x*x/2)*t*(t*(t*(t*(t*b5+b4)+b3)+b2)+b1);
+  }else{
+    const t=1/(1-p*x);
+    return c*Math.exp(-x*x/2)*t*(t*(t*(t*(t*b5+b4)+b3)+b2)+b1);
+  }
+}
+function bsPut(S,K,T,r,sigma){
+  if(T<=0) return Math.max(K-S,0);
+  const d1=(Math.log(S/K)+(r+sigma*sigma/2)*T)/(sigma*Math.sqrt(T));
+  const d2=d1-sigma*Math.sqrt(T);
+  return K*Math.exp(-r*T)*normCdf(-d2)-S*normCdf(-d1);
+}
+function ema(values, period){
+  const k=2/(period+1);
+  const out=new Array(values.length).fill(null);
+  let prev=null;
+  for(let i=0;i<values.length;i++){
+    if(values[i]==null){ continue; }
+    if(prev==null){ prev=values[i]; out[i]=prev; }
+    else{ prev=values[i]*k+prev*(1-k); out[i]=prev; }
+  }
+  return out;
+}
+function fmt(n){ return n==null||isNaN(n) ? '—' : Number(n).toLocaleString('en-IN',{maximumFractionDigits:2}); }
+function money(n){ return (n>=0?'+':'') + '₹' + Number(n).toLocaleString('en-IN',{maximumFractionDigits:0}); }
+
+function setStatus(msg,type){
+  const el=document.getElementById('statusLine');
+  el.textContent=msg||''; el.className='status-line'+(type?' '+type:'');
+}
+
+// default date range: last 1 year
+(function initDates(){
+  const to=new Date();
+  const from=new Date(); from.setFullYear(from.getFullYear()-1);
+  document.getElementById('toDate').value=to.toISOString().slice(0,10);
+  document.getElementById('fromDate').value=from.toISOString().slice(0,10);
+})();
+
+async function fetchCandles(instrumentKey, fromDate, toDate, token){
+  // Calls our own /api/candles serverless proxy (same-origin, no CORS issue),
+  // which forwards the request to Upstox server-to-server.
+  const url=`/api/candles?instrumentKey=${encodeURIComponent(instrumentKey)}&from=${fromDate}&to=${toDate}`;
+  const resp=await fetch(url,{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'}});
+  if(!resp.ok){
+    const body=await resp.text();
+    throw new Error(`Upstox API ${resp.status}: ${body.slice(0,200)}`);
+  }
+  const data=await resp.json();
+  if(data.status!=='success') throw new Error('Upstox returned status: '+data.status);
+  const candles=(data.data && data.data.candles) || [];
+  // candles: [timestamp, open, high, low, close, volume, oi], latest-first -> sort ascending
+  return candles.map(c=>({ date:c[0].slice(0,10), open:c[1], high:c[2], low:c[3], close:c[4] }))
+    .sort((a,b)=> a.date.localeCompare(b.date));
+}
+
+async function runBacktest(){
+  const token=document.getElementById('token').value.trim();
+  if(!token){ setStatus('Paste your Upstox access token first.','err'); return; }
+  const instrKey=document.getElementById('instrument').value;
+  const ins=INSTRUMENT_KEYS[instrKey];
+  const fromDate=document.getElementById('fromDate').value;
+  const toDate=document.getElementById('toDate').value;
+  const fastN=parseInt(document.getElementById('emaFast').value,10);
+  const slowN=parseInt(document.getElementById('emaSlow').value,10);
+  const slPct=parseFloat(document.getElementById('slPct').value)/100;
+  const targetPct=parseFloat(document.getElementById('targetPct').value)/100;
+  const iv=parseFloat(document.getElementById('ivPct').value)/100;
+  const dteDays=parseInt(document.getElementById('dte').value,10);
+  const rf=parseFloat(document.getElementById('rfPct').value)/100;
+  const lotSize=parseInt(document.getElementById('lotSize').value,10);
+
+  document.getElementById('runBtn').disabled=true;
+  setStatus('Fetching '+instrKey+' daily candles from Upstox…');
+  document.getElementById('resultsWrap').style.display='none';
+
+  try{
+    const candles=await fetchCandles(ins.key, fromDate, toDate, token);
+    if(candles.length<slowN+2){ throw new Error('Not enough candles returned for the chosen EMA periods / date range.'); }
+    setStatus(`Loaded ${candles.length} daily candles. Computing EMAs and signals…`);
+
+    const closes=candles.map(c=>c.close);
+    const fastEma=ema(closes,fastN);
+    const slowEma=ema(closes,slowN);
+
+    const trades=[];
+    let openTrade=null;
+
+    for(let i=1;i<candles.length;i++){
+      if(fastEma[i]==null||slowEma[i]==null||fastEma[i-1]==null||slowEma[i-1]==null) continue;
+      const bearishCross = fastEma[i-1] >= slowEma[i-1] && fastEma[i] < slowEma[i];
+      const bullishCross = fastEma[i-1] <= slowEma[i-1] && fastEma[i] > slowEma[i];
+      const today=candles[i];
+
+      if(openTrade){
+        const daysHeld = (new Date(today.date) - new Date(openTrade.entryDate)) / 86400000;
+        const T = Math.max((dteDays - daysHeld)/365, 0.0005);
+        const premium = bsPut(today.close, openTrade.strike, T, rf, iv);
+        const changePct = (premium - openTrade.entryPremium)/openTrade.entryPremium;
+        let exitReason=null;
+        if(premium <= openTrade.entryPremium*(1-slPct)) exitReason='SL hit';
+        else if(premium >= openTrade.entryPremium*(1+targetPct)) exitReason='Target hit';
+        else if(bullishCross) exitReason='Reverse crossover';
+        else if(daysHeld >= dteDays) exitReason='Expiry';
+
+        if(exitReason){
+          const pnl=(premium-openTrade.entryPremium)*lotSize;
+          trades.push({
+            entryDate:openTrade.entryDate, strike:openTrade.strike, entryPremium:openTrade.entryPremium,
+            exitDate:today.date, exitPremium:premium, daysHeld:Math.round(daysHeld), pnl, reason:exitReason
+          });
+          openTrade=null;
+        }
+      }
+
+      if(!openTrade && bearishCross){
+        const strike=Math.round(today.close/ins.strikeStep)*ins.strikeStep;
+        const T=dteDays/365;
+        const entryPremium=bsPut(today.close, strike, T, rf, iv);
+        openTrade={ entryDate:today.date, strike, entryPremium };
+      }
+    }
+    // close any still-open trade at last available close
+    if(openTrade){
+      const last=candles[candles.length-1];
+      const daysHeld=(new Date(last.date)-new Date(openTrade.entryDate))/86400000;
+      const T=Math.max((dteDays-daysHeld)/365,0.0005);
+      const premium=bsPut(last.close, openTrade.strike, T, rf, iv);
+      const pnl=(premium-openTrade.entryPremium)*lotSize;
+      trades.push({
+        entryDate:openTrade.entryDate, strike:openTrade.strike, entryPremium:openTrade.entryPremium,
+        exitDate:last.date, exitPremium:premium, daysHeld:Math.round(daysHeld), pnl, reason:'Still open (data ends)'
+      });
+    }
+
+    renderResults(trades);
+    setStatus(`Backtest complete: ${trades.length} trade(s) generated between ${fromDate} and ${toDate}.`,'ok');
+  }catch(e){
+    setStatus('Backtest failed: '+e.message,'err');
+  }finally{
+    document.getElementById('runBtn').disabled=false;
+  }
+}
+
+function renderResults(trades){
+  const wrap=document.getElementById('resultsWrap');
+  const body=document.getElementById('tradeBody');
+  if(trades.length===0){
+    wrap.style.display='block';
+    body.innerHTML='<tr><td colspan="9" class="empty">No crossover signals found in this date range.</td></tr>';
+    document.getElementById('cTrades').textContent='0';
+    document.getElementById('cWinRate').textContent='—';
+    document.getElementById('cTotalPnl').textContent='—';
+    document.getElementById('cAvgPnl').textContent='—';
+    document.getElementById('cMaxDD').textContent='—';
+    document.getElementById('equitySvg').innerHTML='';
+    return;
+  }
+  wrap.style.display='block';
+  body.innerHTML='';
+  let cum=0, peak=0, maxDD=0;
+  const equityPoints=[[0,0]];
+  trades.forEach((t,idx)=>{
+    cum+=t.pnl;
+    peak=Math.max(peak,cum);
+    maxDD=Math.min(maxDD, cum-peak);
+    equityPoints.push([idx+1,cum]);
+    const pillClass = t.reason==='SL hit' ? 'sl' : t.reason==='Target hit' ? 'target' : t.reason==='Reverse crossover' ? 'signal' : 'expiry';
+    const tr=document.createElement('tr');
+    tr.innerHTML=
+      `<td>${idx+1}</td><td>${t.entryDate}</td><td>${t.strike} PE</td><td>${fmt(t.entryPremium)}</td>`+
+      `<td>${t.exitDate}</td><td>${fmt(t.exitPremium)}</td><td>${t.daysHeld}</td>`+
+      `<td class="${t.pnl>=0?'pnl-pos':'pnl-neg'}">${money(t.pnl)}</td>`+
+      `<td><span class="pill ${pillClass}">${t.reason}</span></td>`;
+    body.appendChild(tr);
+  });
+  const wins=trades.filter(t=>t.pnl>0).length;
+  const totalPnl=trades.reduce((s,t)=>s+t.pnl,0);
+  document.getElementById('cTrades').textContent=trades.length;
+  document.getElementById('cWinRate').textContent=((wins/trades.length)*100).toFixed(1)+'%';
+  const totalEl=document.getElementById('cTotalPnl');
+  totalEl.textContent=money(totalPnl); totalEl.className='val '+(totalPnl>=0?'pos':'neg');
+  const avgEl=document.getElementById('cAvgPnl');
+  const avg=totalPnl/trades.length;
+  avgEl.textContent=money(avg); avgEl.className='val '+(avg>=0?'pos':'neg');
+  document.getElementById('cMaxDD').textContent=money(maxDD);
+  document.getElementById('cMaxDD').className='val neg';
+
+  drawEquityCurve(equityPoints);
+}
+
+function drawEquityCurve(points){
+  const svg=document.getElementById('equitySvg');
+  const W=800,H=180,pad=10;
+  const xs=points.map(p=>p[0]), ys=points.map(p=>p[1]);
+  const minY=Math.min(...ys,0), maxY=Math.max(...ys,0);
+  const spanY=(maxY-minY)||1;
+  const maxX=Math.max(...xs)||1;
+  const toX=x=> pad + (x/maxX)*(W-2*pad);
+  const toY=y=> H-pad - ((y-minY)/spanY)*(H-2*pad);
+  const zeroY=toY(0);
+  const path=points.map((p,i)=> (i===0?'M':'L') + toX(p[0]).toFixed(1) + ',' + toY(p[1]).toFixed(1)).join(' ');
+  svg.innerHTML =
+    `<line x1="${pad}" y1="${zeroY}" x2="${W-pad}" y2="${zeroY}" stroke="#232a38" stroke-width="1"/>`+
+    `<path d="${path}" fill="none" stroke="#4f8cff" stroke-width="2"/>`;
+}
+
+document.getElementById('runBtn').onclick=runBacktest;
+</script>
+</body>
+</html>
